@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>縦読みビューア</title>
+
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #101114;
+  --panel: #1b1d22;
+  --text: #f3f3f5;
+  --muted: #999da8;
+  --accent: #a9b8ff;
+  --gap: 12px;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  scroll-behavior: auto;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Hiragino Kaku Gothic ProN", sans-serif;
+}
+
+header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  padding: 12px 14px;
+  padding-top: max(12px, env(safe-area-inset-top));
+  background: rgba(16, 17, 20, .96);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid #303138;
+  transition: transform .22s ease;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+header.hidden {
+  transform: translateY(-110%);
+  pointer-events: none;
+}
+
+.title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 750;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+button, .upload {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: #2b2e36;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.upload, .primary {
+  background: var(--accent);
+  color: #171923;
+}
+
+button:disabled {
+  opacity: .4;
+  cursor: default;
+}
+
+#fileInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.settings {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.setting {
+  min-width: 0;
+  padding: 9px;
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.setting label {
+  display: flex;
+  justify-content: space-between;
+  gap: 5px;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.setting output {
+  color: var(--text);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+input[type="range"] {
+  width: 100%;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.mode-select {
+  display: flex;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.mode-select button {
+  flex: 1;
+}
+
+.mode-select button.active {
+  background: var(--accent);
+  color: #171923;
+}
+
+.status {
+  margin-top: 9px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+#gallery {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gap);
+  padding: 12px 0 60px;
+}
+
+.photo {
+  display: block;
+  flex: none;
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.empty {
+  padding: 100px 24px;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.9;
+}
+
+#showBar {
+  position: fixed;
+  z-index: 30;
+  top: max(8px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  display: none;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #171923;
+  font-size: 13px;
+  font-weight: 700;
+  border: 0;
+  box-shadow: 0 3px 15px #0006;
+}
+
+#showBar.visible {
+  display: block;
+}
+
+@media (max-width: 380px) {
+  .settings {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
+</head>
+
+<body>
+
+<header id="toolbar">
+  <div class="title-row">
+    <div class="title">縦読み</div>
+    <button id="hideBtn">↓ メニューを隠す</button>
+  </div>
+
+  <div class="controls">
+    <label class="upload" for="fileInput">＋ 画像を追加</label>
+    <input id="fileInput" type="file" accept="image/*" multiple>
+
+    <button id="playBtn" class="primary" disabled>▶ 再生</button>
+    <button id="topBtn">↑ 先頭</button>
+    <button id="clearBtn">クリア</button>
+  </div>
+
+  <div class="mode-select">
+    <button id="continuousMode" class="active">連続スクロール</button>
+    <button id="nextMode">次の画像へ</button>
+  </div>
+
+  <div class="settings">
+    <div class="setting">
+      <label for="speed">
+        <span>スクロール速度</span>
+        <output id="speedValue">120 px/s</output>
+      </label>
+      <input id="speed" type="range" min="1" max="500" step="1" value="120">
+    </div>
+
+    <div class="setting">
+      <label for="width">
+        <span>画像サイズ</span>
+        <output id="widthValue">100%</output>
+      </label>
+      <input id="width" type="range" min="25" max="100" step="1" value="100">
+    </div>
+
+    <div class="setting">
+      <label for="gap">
+        <span>画像間の余白</span>
+        <output id="gapValue">12 px</output>
+      </label>
+      <input id="gap" type="range" min="0" max="40" step="1" value="12">
+    </div>
+  </div>
+
+  <div id="status" class="status">画像を追加してね。</div>
+</header>
+
+<button id="showBar">↑ 操作メニュー</button>
+
+<main id="gallery">
+  <div class="empty">
+    「＋ 画像を追加」から画像を選んでね。<br>
+    画像を縦に並べて読めるよ。
+  </div>
+</main>
+
+<script>
+(() => {
+  "use strict";
+
+  const $ = id => document.getElementById(id);
+
+  const toolbar = $("toolbar");
+  const showBar = $("showBar");
+  const hideBtn = $("hideBtn");
+  const fileInput = $("fileInput");
+  const gallery = $("gallery");
+  const playBtn = $("playBtn");
+  const topBtn = $("topBtn");
+  const clearBtn = $("clearBtn");
+  const status = $("status");
+
+  const speedInput = $("speed");
+  const widthInput = $("width");
+  const gapInput = $("gap");
+
+  const speedValue = $("speedValue");
+  const widthValue = $("widthValue");
+  const gapValue = $("gapValue");
+
+  const continuousMode = $("continuousMode");
+  const nextMode = $("nextMode");
+
+  let images = [];
+  let imageUrls = [];
+  let isPlaying = false;
+  let mode = "continuous";
+  let animationFrame = null;
+  let previousTime = 0;
+
+  // 小数点以下の移動量を蓄積する
+  let scrollRemainder = 0;
+
+  // メニューの表示状態
+  let toolbarManuallyHidden = false;
+
+  function setStatus(message) {
+    status.textContent = message;
+  }
+
+  function showToolbar() {
+    toolbarManuallyHidden = false;
+    toolbar.classList.remove("hidden");
+    showBar.classList.remove("visible");
+  }
+
+  function hideToolbar() {
+    toolbarManuallyHidden = true;
+    toolbar.classList.add("hidden");
+    showBar.classList.add("visible");
+  }
+
+  // スクロールしたらメニューを隠す。
+  // 上にスクロールしても自動では再表示しない。
+  window.addEventListener("scroll", () => {
+    if (window.scrollY > 30 && !toolbarManuallyHidden) {
+      hideToolbar();
+    }
+  }, { passive: true });
+
+  hideBtn.addEventListener("click", hideToolbar);
+  showBar.addEventListener("click", showToolbar);
+
+  function updatePlayButton() {
+    if (mode === "next") {
+      playBtn.textContent = "⏭ 次の画像";
+    } else {
+      playBtn.textContent = isPlaying ? "⏸ 停止" : "▶ 再生";
+    }
+  }
+
+  function stop() {
+    isPlaying = false;
+
+    if (animationFrame !== null) {
+      cancelAnimationFrame(animationFrame);
+      animationFrame = null;
+    }
+
+    previousTime = 0;
+    scrollRemainder = 0;
+    updatePlayButton();
+  }
+
+  function start() {
+    if (!images.length) return;
+
+    if (mode === "next") {
+      goNextImage();
+      return;
+    }
+
+    const atBottom =
+      window.scrollY + window.innerHeight >=
+      document.documentElement.scrollHeight - 3;
+
+    if (atBottom) {
+      window.scrollTo(0, 0);
+    }
+
+    isPlaying = true;
+    previousTime = 0;
+    scrollRemainder = 0;
+
+    updatePlayButton();
+    setStatus("連続スクロール中");
+
+    if (animationFrame !== null) {
+      cancelAnimationFrame(animationFrame);
+    }
+
+    animationFrame = requestAnimationFrame(scrollStep);
+  }
+
+  // 低速でも確実に動く自動スクロール
+  function scrollStep(time) {
+    if (!isPlaying || mode !== "continuous") {
+      animationFrame = null;
+      return;
+    }
+
+    if (previousTime !== 0) {
+      // タブ復帰時などの大きな時間差を制限
+      const elapsed = Math.min(time - previousTime, 100);
+      const speed = Number(speedInput.value);
+
+      // 1フレームの移動量を小数のまま蓄積する
+      scrollRemainder += speed * elapsed / 1000;
+
+      // 1px以上たまったら整数分だけスクロール
+      const pixels = Math.floor(scrollRemainder);
+
+      if (pixels >= 1) {
+        window.scrollBy(0, pixels);
+        scrollRemainder -= pixels;
+      }
+
+      const atBottom =
+        window.scrollY + window.innerHeight >=
+        document.documentElement.scrollHeight - 2;
+
+      if (atBottom) {
+        stop();
+        setStatus("最後まで読み終わりました");
+        return;
+      }
+    }
+
+    previousTime = time;
+    animationFrame = requestAnimationFrame(scrollStep);
+  }
+
+  // 現在表示されている画像から次の画像へ移動
+  function goNextImage() {
+    if (!images.length) return;
+
+    stop();
+
+    const threshold = 5;
+    let index = images.findIndex(img => {
+      const rect = img.getBoundingClientRect();
+      return rect.bottom > threshold;
+    });
+
+    if (index < 0) {
+      setStatus("最後まで到達しました");
+      return;
+    }
+
+    const currentRect = images[index].getBoundingClientRect();
+
+    // 画像の先頭が画面上部を通過していたら次へ
+    if (currentRect.top < -window.innerHeight * 0.25) {
+      index++;
+    }
+
+    if (index >= images.length) {
+      setStatus("最後まで到達しました");
+      return;
+    }
+
+    images[index].scrollIntoView({
+      behavior: "smooth",
+      block: "start"
+    });
+
+    setStatus(`画像 ${index + 1} / ${images.length}`);
+  }
+
+  function togglePlay() {
+    if (mode === "next") {
+      goNextImage();
+      return;
+    }
+
+    if (isPlaying) {
+      stop();
+      setStatus("一時停止中");
+    } else {
+      start();
+    }
+  }
+
+  function setMode(newMode) {
+    stop();
+    mode = newMode;
+
+    continuousMode.classList.toggle(
+      "active", mode === "continuous"
+    );
+    nextMode.classList.toggle(
+      "active", mode === "next"
+    );
+
+    updatePlayButton();
+
+    setStatus(
+      mode === "next"
+        ? "ボタンまたは画像をタップすると次の画像へ"
+        : "連続スクロールモード"
+    );
+  }
+
+  function updateSettings() {
+    speedValue.textContent = `${speedInput.value} px/s`;
+    widthValue.textContent = `${widthInput.value}%`;
+    gapValue.textContent = `${gapInput.value} px`;
+
+    document.documentElement.style.setProperty(
+      "--gap", `${gapInput.value}px`
+    );
+
+    images.forEach(img => {
+      img.style.width = `${widthInput.value}%`;
+    });
+  }
+
+  function clearImages() {
+    stop();
+
+    imageUrls.forEach(url => URL.revokeObjectURL(url));
+    imageUrls = [];
+    images = [];
+
+    gallery.replaceChildren();
+
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "「＋ 画像を追加」から画像を選んでね。";
+    gallery.appendChild(empty);
+
+    playBtn.disabled = true;
+    setStatus("画像を追加してね");
+
+    window.scrollTo(0, 0);
+    showToolbar();
+  }
+
+  fileInput.addEventListener("change", () => {
+    stop();
+
+    const files = Array.from(fileInput.files || [])
+      .filter(file => file.type.startsWith("image/"));
+
+    if (!files.length) {
+      setStatus("画像が選択されていません");
+      return;
+    }
+
+    imageUrls.forEach(url => URL.revokeObjectURL(url));
+    imageUrls = [];
+    images = [];
+    gallery.replaceChildren();
+
+    files.forEach(file => {
+      const url = URL.createObjectURL(file);
+      imageUrls.push(url);
+
+      const img = document.createElement("img");
+      img.className = "photo";
+      img.alt = file.name;
+      img.loading = "eager";
+      img.decoding = "async";
+      img.draggable = false;
+      img.style.width = `${widthInput.value}%`;
+
+      img.addEventListener("error", () => {
+        img.remove();
+        images = images.filter(item => item !== img);
+        playBtn.disabled = images.length === 0;
+        setStatus(`画像を読み込めませんでした: ${file.name}`);
+      });
+
+      img.addEventListener("click", () => {
+        if (mode === "next") {
+          goNextImage();
+        } else {
+          togglePlay();
+        }
+      });
+
+      img.src = url;
+      images.push(img);
+      gallery.appendChild(img);
+    });
+
+    playBtn.disabled = images.length === 0;
+    fileInput.value = "";
+
+    updateSettings();
+    setStatus(`${images.length}枚の画像を読み込みました`);
+
+    window.scrollTo(0, 0);
+    showToolbar();
+  });
+
+  playBtn.addEventListener("click", togglePlay);
+
+  topBtn.addEventListener("click", () => {
+    stop();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    showToolbar();
+    setStatus("先頭に戻りました");
+  });
+
+  clearBtn.addEventListener("click", clearImages);
+
+  continuousMode.addEventListener("click", () => {
+    setMode("continuous");
+    showToolbar();
+  });
+
+  nextMode.addEventListener("click", () => {
+    setMode("next");
+    showToolbar();
+  });
+
+  speedInput.addEventListener("input", updateSettings);
+  widthInput.addEventListener("input", updateSettings);
+  gapInput.addEventListener("input", updateSettings);
+
+  updateSettings();
+})();
+</script>
+
+</body>
+</html>
